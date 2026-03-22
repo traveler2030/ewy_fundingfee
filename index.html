@@ -3995,6 +3995,13 @@ async function cloudPush() {
             headers: { 'Content-Type': 'application/json', 'X-Master-Key': CLOUD_API_KEY },
             body: JSON.stringify(data)
         });
+        if (res.status === 404) {
+            // 저장소가 삭제됨 → 자동으로 새로 생성
+            cloudLog('⚠ 기존 저장소 없음 — 새로 생성 중...');
+            localStorage.removeItem(CLOUD_BIN_LS);
+            await cloudAutoInit();
+            return;
+        }
         if (!res.ok) { var err = await res.json().catch(function(){ return {}; }); throw new Error(err.message || 'HTTP ' + res.status); }
         localStorage.setItem(CLOUD_LAST_SYNC_LS, new Date().toISOString());
         cloudLog('✅ 클라우드에 저장됨');
@@ -4043,6 +4050,14 @@ async function cloudPullSilent(forceApply) {
         var res = await fetch('https://api.jsonbin.io/v3/b/' + binId + '/latest', {
             headers: { 'X-Master-Key': CLOUD_API_KEY }
         });
+        if (res.status === 404) {
+            // 저장소가 삭제됨 → 자동으로 새로 생성
+            cloudLog('⚠ 기존 저장소 없음 — 새로 생성 중...');
+            localStorage.removeItem(CLOUD_BIN_LS);
+            _syncInProgress = false;
+            await cloudAutoInit();
+            return false;
+        }
         if (!res.ok) throw new Error('HTTP ' + res.status);
         var result = await res.json();
         var cloudData = result.record;
