@@ -3821,9 +3821,9 @@ function importAllData(event) {
     event.target.value = ''; // 같은 파일 재선택 허용
 }
 
-// ── 데이터 동기화: 클라우드 (JSONBin.io v3) ──
+// ── 데이터 동기화: 클라우드 (jsonblob.com — API 키 불필요) ──
 var CLOUD_BIN_LS = '_cloud_bin_id';
-var CLOUD_API_KEY = '$2a$10$07KpnvHY9cYufB5uDDiLX.6nq3rsvZEwBAoNLSB/1fenDgusHmAci';
+var CLOUD_API_BASE = 'https://jsonblob.com/api/jsonBlob';
 var CLOUD_LAST_SYNC_LS = '_cloud_last_sync';
 var _syncInProgress = false;
 var _bgSyncInterval = null;
@@ -3953,23 +3953,21 @@ async function cloudAutoInit() {
 
     try {
         var data = gatherAllData();
-        var res = await fetch('https://api.jsonbin.io/v3/b', {
+        var res = await fetch(CLOUD_API_BASE, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Master-Key': CLOUD_API_KEY,
-                'X-Bin-Name': 'delta-dash-' + Date.now(),
-                'X-Bin-Private': 'true'
-            },
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body: JSON.stringify(data)
         });
-        if (!res.ok) {
-            var err = await res.json().catch(function(){ return {}; });
-            throw new Error(err.message || 'HTTP ' + res.status);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        // jsonblob.com returns blob ID in Location header
+        var loc = res.headers.get('Location') || '';
+        var newBinId = loc.split('/').pop();
+        if (!newBinId) {
+            // fallback: try response body
+            var result = await res.json().catch(function(){ return {}; });
+            newBinId = result.id || '';
         }
-        var result = await res.json();
-        var newBinId = result.metadata && result.metadata.id;
-        if (!newBinId) throw new Error('응답 오류');
+        if (!newBinId) throw new Error('저장소 ID를 받지 못했습니다');
         localStorage.setItem(CLOUD_BIN_LS, newBinId);
         localStorage.setItem(CLOUD_LAST_SYNC_LS, new Date().toISOString());
         updateCloudUI();
@@ -3977,8 +3975,8 @@ async function cloudAutoInit() {
         cloudLog('✅ 클라우드 연결 완료!');
     } catch(e) {
         cloudLog('❌ 연결 실패: ' + e.message);
-        updateSyncIndicator('error', '연결 실패');
-        showSyncToast('클라우드 연결 실패: ' + e.message, 'error');
+        updateSyncIndicator('offline', '로컬 저장 중');
+        showSyncToast('클라우드 연결 실패 — 로컬에 저장됩니다', 'info');
     }
 }
 
@@ -3990,9 +3988,9 @@ async function cloudPush() {
     if (badge) { badge.textContent = '저장 중...'; badge.style.color = 'var(--amber)'; badge.style.background = 'var(--amber-light)'; }
     try {
         var data = gatherAllData();
-        var res = await fetch('https://api.jsonbin.io/v3/b/' + binId, {
+        var res = await fetch(CLOUD_API_BASE + '/' + binId, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'X-Master-Key': CLOUD_API_KEY },
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body: JSON.stringify(data)
         });
         if (res.status === 404) {
@@ -4002,12 +4000,12 @@ async function cloudPush() {
             await cloudAutoInit();
             return;
         }
-        if (!res.ok) { var err = await res.json().catch(function(){ return {}; }); throw new Error(err.message || 'HTTP ' + res.status); }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         localStorage.setItem(CLOUD_LAST_SYNC_LS, new Date().toISOString());
         cloudLog('✅ 클라우드에 저장됨');
     } catch(e) {
         cloudLog('❌ 저장 실패: ' + e.message);
-        updateSyncIndicator('error', '저장 실패');
+        updateSyncIndicator('offline', '로컬 저장 중');
     }
     updateCloudUI();
 }
@@ -4019,12 +4017,11 @@ async function cloudPull() {
     updateSyncIndicator('syncing', '불러오는 중...');
     cloudLog('⬇ 데이터 불러오는 중...');
     try {
-        var res = await fetch('https://api.jsonbin.io/v3/b/' + binId + '/latest', {
-            headers: { 'X-Master-Key': CLOUD_API_KEY }
+        var res = await fetch(CLOUD_API_BASE + '/' + binId, {
+            headers: { 'Accept': 'application/json' }
         });
-        if (!res.ok) { var err = await res.json().catch(function(){ return {}; }); throw new Error(err.message || 'HTTP ' + res.status); }
-        var result = await res.json();
-        var data = result.record;
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var data = await res.json();
         if (!data || typeof data !== 'object') throw new Error('데이터 없음');
         if (!confirm('클라우드 데이터를 불러오면 현재 데이터가 교체됩니다.\n저장 시각: ' + (data._exportTime ? new Date(data._exportTime).toLocaleString('ko-KR') : '불명') + '\n\n진행하시겠습니까?')) {
             cloudLog('취소됨'); updateCloudUI(); return;
@@ -4047,8 +4044,8 @@ async function cloudPullSilent(forceApply) {
     if (!binId || _syncInProgress) return false;
     _syncInProgress = true;
     try {
-        var res = await fetch('https://api.jsonbin.io/v3/b/' + binId + '/latest', {
-            headers: { 'X-Master-Key': CLOUD_API_KEY }
+        var res = await fetch(CLOUD_API_BASE + '/' + binId, {
+            headers: { 'Accept': 'application/json' }
         });
         if (res.status === 404) {
             // 저장소가 삭제됨 → 자동으로 새로 생성
@@ -4059,8 +4056,7 @@ async function cloudPullSilent(forceApply) {
             return false;
         }
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        var result = await res.json();
-        var cloudData = result.record;
+        var cloudData = await res.json();
         if (!cloudData || typeof cloudData !== 'object') throw new Error('데이터 없음');
 
         var cloudTime = cloudData._exportTime ? new Date(cloudData._exportTime).getTime() : 0;
@@ -4090,7 +4086,7 @@ async function cloudPullSilent(forceApply) {
     } catch(e) {
         _syncInProgress = false;
         cloudLog('⚠ 자동 동기화 실패: ' + e.message);
-        updateSyncIndicator('error', '동기화 실패');
+        updateSyncIndicator('offline', '로컬 저장 중');
         return false;
     }
 }
