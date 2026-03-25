@@ -312,6 +312,7 @@
                 <span id="sync_label">로컬</span>
             </div>
             <button id="btn_sync_link" class="btn btn-secondary" onclick="copySyncLink()" style="padding:5px 12px;font-size:0.78em;border-radius:6px;display:none;" title="다른 기기에서 이 링크로 접속하면 자동 동기화">📋 동기화 링크</button>
+            <button class="btn btn-primary" id="btn_header_save" onclick="headerSave()" style="padding:5px 12px;font-size:0.78em;border-radius:6px;">💾 저장</button>
             <button class="btn btn-secondary" onclick="fetchData();fetchFundingHistory();" style="padding:5px 12px;font-size:0.78em;border-radius:6px;">🔄 새로고침</button>
             <span id="live_badge" class="badge">대기 중</span>
             <span id="last_update">-</span>
@@ -1151,6 +1152,33 @@ function autoCloudPush() {
     var binId = localStorage.getItem(CLOUD_BIN_LS);
     if (binId && !_syncInProgress) {
         cloudPush().catch(function(){});
+    }
+}
+
+function headerSave() {
+    saveAndFetch();
+    var btn = gel('btn_header_save');
+    if (btn) {
+        btn.textContent = '\u2713 \uc800\uc7a5\ub428';
+        btn.style.background = 'var(--green)';
+        setTimeout(function() {
+            btn.textContent = '\ud83d\udcbe \uc800\uc7a5';
+            btn.style.background = '';
+        }, 2000);
+    }
+    var binId = localStorage.getItem(CLOUD_BIN_LS);
+    if (binId) {
+        showSyncToast('\uc800\uc7a5 \ubc0f \ud074\ub77c\uc6b0\ub4dc \ub3d9\uae30\ud654 \uc644\ub8cc', 'success', 2000);
+    } else {
+        showSyncToast('\ub85c\uceec\uc5d0 \uc800\uc7a5\ub418\uc5c8\uc2b5\ub2c8\ub2e4', 'info', 2000);
+        if (!localStorage.getItem('_cloud_hint_shown')) {
+            localStorage.setItem('_cloud_hint_shown', '1');
+            setTimeout(function() {
+                showSyncToast('\ub2e4\ub978 \uae30\uae30\uc5d0\uc11c\ub3c4 \ubcf4\ub824\uba74 \uc544\ub798 "\ub3d9\uae30\ud654 \uc2dc\uc791"\uc744 \ub20c\ub7ec\uc8fc\uc138\uc694', 'info', 4000);
+                var card = gel('cloud_card');
+                if (card) card.scrollIntoView({behavior:'smooth', block:'center'});
+            }, 2500);
+        }
     }
 }
 
