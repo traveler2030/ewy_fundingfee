@@ -1,5 +1,6 @@
-// === EWY Delta-Neutral Dashboard v39 (separated) ===
+// === EWY Delta-Neutral Dashboard v39.1 (separated) ===
 // Original: index.html v38 → split into css/dashboard.css + js/app.js
+// v39.1: 크로스 디바이스 동기화 안정성 개선
 
 'use strict';
 
@@ -3107,7 +3108,8 @@ async function cloudPullSilent(forceApply) {
     _syncInProgress = true;
     try {
         var res = await fetch('https://api.jsonbin.io/v3/b/' + binId + '/latest', {
-            headers: { 'X-Master-Key': CLOUD_API_KEY }
+            headers: { 'X-Master-Key': CLOUD_API_KEY },
+            cache: 'no-store' // ★ v39.1: 브라우저 캐시 방지
         });
         if (res.status === 404) {
             cloudLog('⚠ 기존 저장소 없음 — 새로 생성 중...');
@@ -3124,6 +3126,13 @@ async function cloudPullSilent(forceApply) {
         var cloudTime = cloudData._exportTime ? new Date(cloudData._exportTime).getTime() : 0;
         var localData = gatherAllData();
         var localTime = localData._exportTime ? new Date(localData._exportTime).getTime() : 0;
+
+        // ★ v39.1: 로컬에 데이터가 거의 없으면(새 기기) 무조건 클라우드 적용
+        var localPositions = localStorage.getItem('positions');
+        var hasLocalData = localPositions && localPositions !== '[]' && localPositions !== 'null';
+        if (!hasLocalData && cloudData.positions && cloudData.positions !== '[]') {
+            forceApply = true;
+        }
 
         if (forceApply || cloudTime > localTime) {
             // 클라우드가 더 최신 → 적용
@@ -3187,9 +3196,10 @@ function stopBgSync() {
 }
 
 // 페이지 포커스 시 자동 동기화
+// ★ v39.1: 포커스 복귀 시 즉시 동기화 (모바일에서 탭 전환 후 복귀 시 중요)
 document.addEventListener('visibilitychange', function() {
     if (!document.hidden && localStorage.getItem(CLOUD_BIN_LS) && !_syncInProgress) {
-        setTimeout(function() { cloudPullSilent(false).catch(function(){}); }, 1000);
+        cloudPullSilent(false).catch(function(){});
     }
 });
 
