@@ -111,6 +111,7 @@ function saveAndFetch() {
 }
 
 function autoCloudPush() {
+    markLocalDataChanged(); // ★ v39.1: push 전 항상 타임스탬프 갱신
     var binId = localStorage.getItem(CLOUD_BIN_LS);
     if (binId && !_syncInProgress) {
         cloudPush().catch(function(){});
@@ -2981,17 +2982,14 @@ function cloudDisconnect() {
 }
 
 // URL ?sync= 파라미터로 자동 동기화 연결
+// ★ v39.1 FIX: 같은 ID라도 항상 force pull (재방문 시 최신 데이터 반영)
 function checkSyncFromURL() {
     var params = new URLSearchParams(window.location.search);
     var syncId = params.get('sync');
     if (syncId && syncId.length > 10) {
-        var existingId = localStorage.getItem(CLOUD_BIN_LS);
-        if (existingId !== syncId) {
-            localStorage.setItem(CLOUD_BIN_LS, syncId);
-            cloudLog('🔗 URL에서 동기화 코드 감지 — 연결 중...');
-            // 연결 후 데이터 자동 불러오기
-            cloudPullSilent(true);
-        }
+        localStorage.setItem(CLOUD_BIN_LS, syncId);
+        cloudLog('🔗 동기화 링크 감지 — 최신 데이터 불러오는 중...');
+        cloudPullSilent(true);
     }
 }
 
