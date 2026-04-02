@@ -3100,18 +3100,25 @@ async function cloudPull() {
     }
 }
 
-// ★ v39.2: 해시 비교 기반 자동 Pull (타임스탬프 비교 완전 제거)
-async function cloudPullSilent(forceApply) {
+// ★ v39.2: 페이지 로드 시 항상 클라우드 데이터를 적용 (비교 로직 제거)
+async function cloudPullSilent() {
     var binId = localStorage.getItem(CLOUD_BIN_LS);
-    if (!binId || _syncInProgress) return false;
+    if (!binId) return false;
+    // ★ _syncInProgress 잠금 5초 후 자동 해제 (데드락 방지)
+    if (_syncInProgress) {
+        cloudLog('⏳ 동기화 대기 중...');
+        return false;
+    }
     _syncInProgress = true;
+    setTimeout(function() { _syncInProgress = false; }, 5000);
     try {
+        cloudLog('⬇ 클라우드에서 데이터 확인 중...');
         var res = await fetch('https://api.jsonbin.io/v3/b/' + binId + '/latest', {
             headers: { 'X-Master-Key': CLOUD_API_KEY },
             cache: 'no-store'
         });
         if (res.status === 404) {
-            cloudLog('⚠ 기존 저장소 없음 — 새로 생성 중...');
+            cloudLog('⚠ 저장소 없음(404) — 새로 생성');
             localStorage.removeItem(CLOUD_BIN_LS);
             _syncInProgress = false;
             await cloudAutoInit();
@@ -3120,30 +3127,39 @@ async function cloudPullSilent(forceApply) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         var result = await res.json();
         var cloudData = result.record;
-        if (!cloudData || typeof cloudData !== 'object') throw new Error('데이터 없음');
+        if (!cloudData || typeof cloudData !== 'object') throw new Error('응답 데이터 없음');
 
+        // 클라우드 데이터에 실제 내용이 있는지 확인
+        var hasCloudPositions = cloudData.positions && cloudData.positions !== '[]';
+        var cloudKeyCount = 0;
+        SYNC_KEYS.forEach(function(k) { if (cloudData[k] !== undefined) cloudKeyCount++; });
+        cloudLog('☁ 클라우드: ' + cloudKeyCount + '개 키' + (hasCloudPositions ? ', 포지션 있음' : ''));
+
+        // 로컬과 다를 때만 적용 (무한 reload 방지)
         var cloudHash = dataHash(cloudData);
         var localHash = dataHash(gatherAllData());
+        cloudLog('비교: cloud=' + cloudHash + ' local=' + localHash);
 
-        if (forceApply || cloudHash !== localHash) {
-            // 데이터가 다름 → 클라우드 데이터 적용
+        if (cloudHash !== localHash) {
             applyAllData(cloudData);
             localStorage.setItem(CLOUD_LAST_SYNC_LS, new Date().toISOString());
             _syncInProgress = false;
-            cloudLog('⬇ 최신 데이터 반영됨');
-            showSyncToast('다른 기기의 변경사항이 반영되었습니다', 'success');
-            setTimeout(function(){ location.reload(); }, 500);
+            cloudLog('✅ 클라우드 데이터 적용 완료');
+            showSyncToast('클라우드 데이터가 반영되었습니다', 'success');
+            setTimeout(function(){ location.reload(); }, 800);
             return true;
         }
-        // 동일 → 아무것도 안 함
+        // 동일 → 적용 불필요
         localStorage.setItem(CLOUD_LAST_SYNC_LS, new Date().toISOString());
         updateCloudUI();
         _syncInProgress = false;
+        cloudLog('✅ 이미 최신 상태');
         return false;
     } catch(e) {
         _syncInProgress = false;
-        cloudLog('⚠ 자동 동기화 실패: ' + e.message);
-        updateSyncIndicator('offline', '로컬 저장 중');
+        cloudLog('❌ Pull 실패: ' + e.message);
+        updateSyncIndicator('offline', '동기화 실패');
+        showSyncToast('동기화 실패: ' + e.message, 'error', 3000);
         return false;
     }
 }
