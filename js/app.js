@@ -102,6 +102,7 @@ function saveAndFetch() {
         var el = gel(id);
         if (el) localStorage.setItem(id, el.value);
     });
+    markLocalDataChanged(); // ★ v39 FIX
     fetchData();
     fetchFundingHistory();
     // ★ 자동 클라우드 업로드 (연결 시)
@@ -148,6 +149,7 @@ function getPositions() {
 }
 function savePositions(list) {
     localStorage.setItem('positions', JSON.stringify(list));
+    markLocalDataChanged(); // ★ v39 FIX
 }
 var _lastRemovedPos = null; // 되돌리기용
 
@@ -317,6 +319,7 @@ function syncPositionsToInputs() {
         var el = gel(id);
         if (el) localStorage.setItem(id, el.value);
     });
+    markLocalDataChanged(); // ★ v39 FIX
     fetchData();
     recalcIncomeFromCache(); // API 재호출 없이 캐시에서 수익 재계산
     autoCloudPush();
@@ -360,6 +363,7 @@ function getClosedTrades() {
 }
 function saveClosedTrades(list) {
     localStorage.setItem('closedTrades', JSON.stringify(list));
+    markLocalDataChanged(); // ★ v39 FIX
 }
 
 // 총 실현 손익 (KRW)
@@ -2764,8 +2768,19 @@ var SYNC_KEYS = ['positions','closedTrades','bfh_cache','_dash_ver','_funding_ea
     'i_etf_p','i_etf_q','i_usdt_q','i_fx','i_short_p','i_margin','i_fee','i_sym',
     'i_open_date','i_open_time','i_ewy_manual','i_tiger_manual','i_taker_fee','i_maker_fee'];
 
+// ★ FIX v39: 로컬 데이터 변경 시각 추적 (동기화 비교 버그 수정)
+var LOCAL_DATA_TIME_LS = '_local_data_time';
+
+function markLocalDataChanged() {
+    localStorage.setItem(LOCAL_DATA_TIME_LS, new Date().toISOString());
+}
+
 function gatherAllData() {
-    var data = { _exportTime: new Date().toISOString(), _version: 'v38' };
+    // ★ FIX: _exportTime을 항상 now()로 생성하면 pull 비교 시 항상 로컬이 최신으로 판정됨
+    // → 실제 데이터 변경 시각을 사용하여 정확한 비교 가능
+    // → 새 기기(미설정)는 아주 오래된 시각 → 클라우드에서 자동 pull
+    var storedTime = localStorage.getItem(LOCAL_DATA_TIME_LS) || '2000-01-01T00:00:00.000Z';
+    var data = { _exportTime: storedTime, _version: 'v38' };
     SYNC_KEYS.forEach(function(key) {
         var val = localStorage.getItem(key);
         if (val !== null) data[key] = val;
@@ -2780,6 +2795,10 @@ function applyAllData(data) {
             localStorage.setItem(key, data[key]);
         }
     });
+    // ★ v39 FIX: 클라우드 데이터 적용 시 해당 타임스탬프를 로컬 시각으로 보존
+    if (data._exportTime) {
+        localStorage.setItem(LOCAL_DATA_TIME_LS, data._exportTime);
+    }
     return true;
 }
 
@@ -2814,6 +2833,7 @@ function importAllData(event) {
             if (!confirm('가져온 데이터:\n• 포지션: '+posCount+'건\n• 청산 내역: '+closeCount+'건\n• 내보낸 시각: '+(data._exportTime||'불명')+'\n\n현재 데이터를 덮어쓰시겠습니까?')) return;
 
             applyAllData(data);
+            markLocalDataChanged(); // ★ v39 FIX: 파일 가져오기 = 로컬 데이터 변경
             cloudLog('📥 JSON 파일 가져오기 완료 — 새로고침 중...');
             setTimeout(function(){ location.reload(); }, 500);
         } catch(err) {
