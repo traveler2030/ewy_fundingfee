@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>델타 중립 펀딩비 전략 대시보드 v39.1</title>
-    <link rel="stylesheet" href="css/dashboard.css?v=39.2">
+    <title>델타 중립 펀딩비 전략 대시보드 v39.2</title>
+    <link rel="stylesheet" href="css/dashboard.css?v=39.3">
 </head>
 <body>
 <div class="container">
@@ -15,13 +15,7 @@
     <div class="header">
         <h1>📊 델타 중립 펀딩비 전략 대시보드</h1>
         <div class="header-meta">
-            <div class="sync-indicator" id="header_sync" onclick="smartSync()" title="클릭하여 동기화">
-                <span class="sync-dot" id="sync_dot"></span>
-                <span id="sync_label">로컬</span>
-            </div>
-            <button id="btn_sync_link" class="btn btn-secondary" onclick="copySyncLink()" style="padding:5px 12px;font-size:0.78em;border-radius:6px;display:none;" title="다른 기기에서 이 링크로 접속하면 자동 동기화">📋 동기화 링크</button>
             <button class="btn btn-primary" id="btn_header_save" onclick="headerSave()" style="padding:5px 12px;font-size:0.78em;border-radius:6px;">💾 저장</button>
-            <button class="btn btn-secondary" onclick="fetchData();fetchFundingHistory();" style="padding:5px 12px;font-size:0.78em;border-radius:6px;">🔄 새로고침</button>
             <span id="live_badge" class="badge">대기 중</span>
             <span id="last_update">-</span>
         </div>
@@ -748,6 +742,6 @@
 </div>
 
 <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-<script src="js/app.js?v=39.2"></script>
+<script src="js/app.js?v=39.3"></script>
 </body>
 </html>

@@ -103,45 +103,41 @@ function saveAndFetch() {
         var el = gel(id);
         if (el) localStorage.setItem(id, el.value);
     });
-    markLocalDataChanged(); // ★ v39 FIX
     fetchData();
     fetchFundingHistory();
-    // ★ 자동 클라우드 업로드 (연결 시)
-    autoCloudPush();
 }
 
-function autoCloudPush() {
-    markLocalDataChanged(); // ★ v39.1: push 전 항상 타임스탬프 갱신
-    var binId = localStorage.getItem(CLOUD_BIN_LS);
-    if (binId && !_syncInProgress) {
-        cloudPush().catch(function(){});
-    }
-}
+// ★ v39.2: 자동 클라우드 push 제거. 기존 호출처 호환용 no-op
+function autoCloudPush() {}
 
 function headerSave() {
     saveAndFetch();
     var btn = gel('btn_header_save');
-    if (btn) {
-        btn.textContent = '\u2713 \uc800\uc7a5\ub428';
-        btn.style.background = 'var(--green)';
-        setTimeout(function() {
-            btn.textContent = '\ud83d\udcbe \uc800\uc7a5';
-            btn.style.background = '';
-        }, 2000);
-    }
+    // 클라우드 연결 시 push
     var binId = localStorage.getItem(CLOUD_BIN_LS);
     if (binId) {
-        showSyncToast('\uc800\uc7a5 \ubc0f \ud074\ub77c\uc6b0\ub4dc \ub3d9\uae30\ud654 \uc644\ub8cc', 'success', 2000);
+        cloudPush().then(function() {
+            if (btn) {
+                btn.textContent = '✓ 저장됨';
+                btn.style.background = 'var(--green)';
+                setTimeout(function() { btn.textContent = '💾 저장'; btn.style.background = ''; }, 2000);
+            }
+            showSyncToast('저장 및 클라우드 동기화 완료', 'success', 2000);
+        }).catch(function() {
+            if (btn) {
+                btn.textContent = '⚠ 로컬만 저장됨';
+                btn.style.background = 'var(--amber)';
+                setTimeout(function() { btn.textContent = '💾 저장'; btn.style.background = ''; }, 2000);
+            }
+            showSyncToast('로컬 저장 완료 (클라우드 실패)', 'warn', 3000);
+        });
     } else {
-        showSyncToast('\ub85c\uceec\uc5d0 \uc800\uc7a5\ub418\uc5c8\uc2b5\ub2c8\ub2e4', 'info', 2000);
-        if (!localStorage.getItem('_cloud_hint_shown')) {
-            localStorage.setItem('_cloud_hint_shown', '1');
-            setTimeout(function() {
-                showSyncToast('\ub2e4\ub978 \uae30\uae30\uc5d0\uc11c\ub3c4 \ubcf4\ub824\uba74 \uc544\ub798 "\ub3d9\uae30\ud654 \uc2dc\uc791"\uc744 \ub20c\ub7ec\uc8fc\uc138\uc694', 'info', 4000);
-                var card = gel('cloud_card');
-                if (card) card.scrollIntoView({behavior:'smooth', block:'center'});
-            }, 2500);
+        if (btn) {
+            btn.textContent = '✓ 저장됨';
+            btn.style.background = 'var(--green)';
+            setTimeout(function() { btn.textContent = '💾 저장'; btn.style.background = ''; }, 2000);
         }
+        showSyncToast('로컬에 저장되었습니다', 'info', 2000);
     }
 }
 
@@ -2770,24 +2766,33 @@ var SYNC_KEYS = ['positions','closedTrades','bfh_cache','_dash_ver','_funding_ea
     'i_etf_p','i_etf_q','i_usdt_q','i_fx','i_short_p','i_margin','i_fee','i_sym',
     'i_open_date','i_open_time','i_ewy_manual','i_tiger_manual','i_taker_fee','i_maker_fee'];
 
-// ★ FIX v39: 로컬 데이터 변경 시각 추적 (동기화 비교 버그 수정)
-var LOCAL_DATA_TIME_LS = '_local_data_time';
-
 function markLocalDataChanged() {
-    localStorage.setItem(LOCAL_DATA_TIME_LS, new Date().toISOString());
+    // no-op: v39.2에서 해시 비교로 전환, 타임스탬프 불필요
 }
 
 function gatherAllData() {
-    // ★ FIX: _exportTime을 항상 now()로 생성하면 pull 비교 시 항상 로컬이 최신으로 판정됨
-    // → 실제 데이터 변경 시각을 사용하여 정확한 비교 가능
-    // → 새 기기(미설정)는 아주 오래된 시각 → 클라우드에서 자동 pull
-    var storedTime = localStorage.getItem(LOCAL_DATA_TIME_LS) || '2000-01-01T00:00:00.000Z';
-    var data = { _exportTime: storedTime, _version: 'v38' };
+    var data = { _exportTime: new Date().toISOString(), _version: 'v38' };
     SYNC_KEYS.forEach(function(key) {
         var val = localStorage.getItem(key);
         if (val !== null) data[key] = val;
     });
     return data;
+}
+
+// ★ v39.2: 데이터 내용 해시로 비교 (타임스탬프 비교 완전 제거)
+function dataHash(data) {
+    var parts = [];
+    SYNC_KEYS.forEach(function(key) {
+        if (data[key] !== undefined) parts.push(key + '=' + data[key]);
+    });
+    var str = parts.join('|');
+    // 간단한 해시 (djb2)
+    var hash = 5381;
+    for (var i = 0; i < str.length; i++) {
+        hash = ((hash << 5) + hash) + str.charCodeAt(i);
+        hash = hash & hash; // 32bit 정수
+    }
+    return hash;
 }
 
 function applyAllData(data) {
@@ -2797,10 +2802,6 @@ function applyAllData(data) {
             localStorage.setItem(key, data[key]);
         }
     });
-    // ★ v39 FIX: 클라우드 데이터 적용 시 해당 타임스탬프를 로컬 시각으로 보존
-    if (data._exportTime) {
-        localStorage.setItem(LOCAL_DATA_TIME_LS, data._exportTime);
-    }
     return true;
 }
 
@@ -3099,7 +3100,7 @@ async function cloudPull() {
     }
 }
 
-// 자동 Pull (확인 없이, 타임스탬프 비교 후 필요 시만 적용)
+// ★ v39.2: 해시 비교 기반 자동 Pull (타임스탬프 비교 완전 제거)
 async function cloudPullSilent(forceApply) {
     var binId = localStorage.getItem(CLOUD_BIN_LS);
     if (!binId || _syncInProgress) return false;
@@ -3107,7 +3108,7 @@ async function cloudPullSilent(forceApply) {
     try {
         var res = await fetch('https://api.jsonbin.io/v3/b/' + binId + '/latest', {
             headers: { 'X-Master-Key': CLOUD_API_KEY },
-            cache: 'no-store' // ★ v39.1: 브라우저 캐시 방지
+            cache: 'no-store'
         });
         if (res.status === 404) {
             cloudLog('⚠ 기존 저장소 없음 — 새로 생성 중...');
@@ -3121,31 +3122,18 @@ async function cloudPullSilent(forceApply) {
         var cloudData = result.record;
         if (!cloudData || typeof cloudData !== 'object') throw new Error('데이터 없음');
 
-        var cloudTime = cloudData._exportTime ? new Date(cloudData._exportTime).getTime() : 0;
-        var localData = gatherAllData();
-        var localTime = localData._exportTime ? new Date(localData._exportTime).getTime() : 0;
+        var cloudHash = dataHash(cloudData);
+        var localHash = dataHash(gatherAllData());
 
-        // ★ v39.1: 로컬에 데이터가 거의 없으면(새 기기) 무조건 클라우드 적용
-        var localPositions = localStorage.getItem('positions');
-        var hasLocalData = localPositions && localPositions !== '[]' && localPositions !== 'null';
-        if (!hasLocalData && cloudData.positions && cloudData.positions !== '[]') {
-            forceApply = true;
-        }
-
-        if (forceApply || cloudTime > localTime) {
-            // 클라우드가 더 최신 → 적용
+        if (forceApply || cloudHash !== localHash) {
+            // 데이터가 다름 → 클라우드 데이터 적용
             applyAllData(cloudData);
             localStorage.setItem(CLOUD_LAST_SYNC_LS, new Date().toISOString());
             _syncInProgress = false;
-            cloudLog('⬇ 최신 데이터 자동 반영됨');
+            cloudLog('⬇ 최신 데이터 반영됨');
             showSyncToast('다른 기기의 변경사항이 반영되었습니다', 'success');
             setTimeout(function(){ location.reload(); }, 500);
             return true;
-        } else if (localTime > cloudTime) {
-            // 로컬이 더 최신 → 업로드
-            _syncInProgress = false;
-            await cloudPush();
-            return false;
         }
         // 동일 → 아무것도 안 함
         localStorage.setItem(CLOUD_LAST_SYNC_LS, new Date().toISOString());
@@ -3160,22 +3148,18 @@ async function cloudPullSilent(forceApply) {
     }
 }
 
-// 스마트 동기화 (헤더 버튼 + 메인 버튼에서 호출)
+// 스마트 동기화 (메인 동기화 버튼에서 호출)
 async function smartSync() {
     var binId = localStorage.getItem(CLOUD_BIN_LS);
     if (!binId) {
-        // 동기화 섹션으로 스크롤
         var card = gel('cloud_card');
         if (card) card.scrollIntoView({behavior:'smooth', block:'center'});
         return;
     }
     if (_syncInProgress) { showSyncToast('동기화 진행 중...', 'info', 1500); return; }
-    updateSyncIndicator('syncing', '동기화 중...');
     showSyncToast('동기화 중...', 'info', 1500);
     var pulled = await cloudPullSilent(false);
     if (!pulled) {
-        // 이미 최신이거나 Push 완료
-        updateCloudUI();
         showSyncToast('최신 상태입니다', 'success', 2000);
     }
 }
